@@ -2,6 +2,7 @@
 Imports System.IO.Ports
 Imports System.Threading
 Imports System.Diagnostics
+Imports MySql.Data.MySqlClient
 
 Public Class frmMain
     Private serialPort As New IO.Ports.SerialPort
@@ -12,12 +13,11 @@ Public Class frmMain
 
     Private Sub Button1_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles cmdStart.Click
 
-        Dim objEventLog As New EventLog()
         Dim DataArray(100) As Integer
         Dim Counter As Integer
         Dim DCP, Parameter, Value As Integer
-        Dim conn As New SqlConnection
-        Dim SQLCmd As New SqlCommand
+        Dim conn As New MySqlConnection
+        Dim SQLCmd As New MySqlCommand
         Dim I, r As Integer
 
         Dim PrevRXbyte, RXByte As Byte
@@ -25,6 +25,13 @@ Public Class frmMain
         Dim FullData As String = ""
         Dim DPC As Integer 'Data Part Counter
         Dim Restart As Boolean
+
+        Dim DatabaseName As String = "Nibe"
+        Dim server As String = "192.168.192.18"
+        Dim userName As String = "nibe"
+        Dim password As String = "nibe"
+        If Not conn Is Nothing Then conn.Close()
+        conn.ConnectionString = String.Format("server={0}; user id={1}; password={2}; database={3}; pooling=false", server, userName, password, DatabaseName)
 
         cmdStart.Enabled = False
 
@@ -35,7 +42,6 @@ Start:
 
         System.Windows.Forms.Application.DoEvents()
 
-       
         Try
 
             If serialPort.IsOpen Then
@@ -43,7 +49,7 @@ Start:
             End If
 
             With serialPort
-                .PortName = "COM1"
+                .PortName = "COM5"
                 .BaudRate = 19200
                 .Parity = IO.Ports.Parity.Mark
                 .DataBits = 8
@@ -57,15 +63,17 @@ Start:
             serialPort.DiscardInBuffer()
             System.Windows.Forms.Application.DoEvents()
 
+
             lblMessage.Text = "Port connected."
 
             Do
 
                 System.Windows.Forms.Application.DoEvents()
 
-                RXByte = serialPort.ReadByte
-                If PrevRXbyte.ToString("X2") = "00" And RXByte.ToString("X2") = "14" Then
-                    With serialPort
+                RXByte = serialPort.ReadByte 'Read on byte from serial
+
+                If PrevRXbyte.ToString("X2") = "00" And RXByte.ToString("X2") = "14" Then ' Check for leading 0014
+                    With serialPort 'sending "ACK"
                         .Parity = Parity.Space
                         .RtsEnable = True
                         .Write(Chr(6))
@@ -173,7 +181,7 @@ Start:
                 If Counter > 96 Then
 
                     lblMessage.Text = "Writing Data"
-                    conn.ConnectionString = "Data Source=PCNSRV01;Initial Catalog=Nibe;Persist Security Info=True;User ID=nibe;Password=nibe35"
+
                     SQLCmd.Connection = conn
                     SQLCmd.CommandText = "Insert into Data Values ( "
 
@@ -185,12 +193,10 @@ Start:
                     Next
                     SQLCmd.CommandText = SQLCmd.CommandText & DataArray(96) & ")"
 
-                    SQLCmd.Connection = conn
-
                     conn.Open()
                     r = SQLCmd.ExecuteNonQuery
-
                     conn.Close()
+
                     Counter = 0
                     ReDim DataArray(100)
                     serialPort.Close()
@@ -209,20 +215,21 @@ Start:
             Loop
 
         Catch ex As Exception
-            WriteToEventLog(ex.ToString, "NiBE Communication", EventLogEntryType.Error, "Application")
+            lblMessage.Text = ex.ToString
             Restart = True
         End Try
 
-        ReDim CBArray(255)
-        ReDim DataArray(100)
-        DPC = 0
-        PrevRXbyte = Nothing
-        Counter = 0
 
-        If Restart Then GoTo Start
+        ReDim CBArray(255)
+            ReDim DataArray(100)
+            DPC = 0
+            PrevRXbyte = Nothing
+            Counter = 0
+
+            If Restart Then GoTo Start
 
 Klar:
-        lblMessage.AppendText(" Klar")
+            lblMessage.AppendText(" Klar")
 
     End Sub
     Private Sub frmMain_Close(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.FormClosing
@@ -230,62 +237,5 @@ Klar:
             serialPort.Close()
         End If
     End Sub
-
-    Public Function WriteToEventLog(ByVal Entry As String, _
-      Optional ByVal AppName As String = "VB.NET Application", _
-      Optional ByVal EventType As  _
-      EventLogEntryType = EventLogEntryType.Information, _
-      Optional ByVal LogName As String = "Application") As Boolean
-
-        '*************************************************************
-        'PURPOSE: Write Entry to Event Log using VB.NET
-        'PARAMETERS: Entry - Value to Write
-        '            AppName - Name of Client Application. Needed 
-        '              because before writing to event log, you must 
-        '              have a named EventLog source. 
-        '            EventType - Entry Type, from EventLogEntryType 
-        '              Structure e.g., EventLogEntryType.Warning, 
-        '              EventLogEntryType.Error
-        '            LogName: Name of Log (System, Application; 
-        '              Security is read-only) If you 
-        '              specify a non-existent log, the log will be
-        '              created
-
-        'RETURNS:   True if successful, false if not
-
-        'EXAMPLES: 
-        '1. Simple Example, Accepting All Defaults
-        '    WriteToEventLog "Hello Event Log"
-
-        '2.  Specify EventSource, EventType, and LogName
-        '    WriteToEventLog("Danger, Danger, Danger", "MyVbApp", _
-        '                      EventLogEntryType.Warning, "System")
-        '
-        'NOTE:     EventSources are tightly tied to their log. 
-        '          So don't use the same source name for different 
-        '          logs, and vice versa
-        '******************************************************
-
-        Dim objEventLog As New EventLog()
-
-        Try
-            'Register the App as an Event Source
-            If Not objEventLog.SourceExists(AppName) Then
-
-                objEventLog.CreateEventSource(AppName, LogName)
-            End If
-
-            objEventLog.Source = AppName
-
-            'WriteEntry is overloaded; this is one
-            'of 10 ways to call it
-            objEventLog.WriteEntry(Entry, EventType)
-            Return True
-        Catch Ex As Exception
-            Return False
-
-        End Try
-
-    End Function
-
 End Class
+
